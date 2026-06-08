@@ -4,9 +4,15 @@
   const items = [];
 
   const video = document.getElementById('preview');
+  const canvas = document.getElementById('captureCanvas');
   const btnStart = document.getElementById('btnStart');
+  const btnCapture = document.getElementById('btnCapture');
   const btnStop = document.getElementById('btnStop');
   const scanStatus = document.getElementById('scanStatus');
+  const reviewPanel = document.getElementById('reviewPanel');
+  const reviewInput = document.getElementById('reviewInput');
+  const btnReviewAdd = document.getElementById('btnReviewAdd');
+  const btnReviewDiscard = document.getElementById('btnReviewDiscard');
   const manualForm = document.getElementById('manualForm');
   const manualInput = document.getElementById('manualInput');
   const resultBody = document.getElementById('resultBody');
@@ -16,8 +22,8 @@
   const btnClear = document.getElementById('btnClear');
   const btnPdf = document.getElementById('btnPdf');
 
-  const codeReader = new ZXing.BrowserMultiFormatReader();
-  let scanning = false;
+  let mediaStream = null;
+  let ocrWorker = null;
 
   function setStatus(message, type) {
     scanStatus.textContent = message || '';
@@ -35,7 +41,7 @@
       row.innerHTML =
         '<td>' + (index + 1) + '</td>' +
         '<td>' + escapeHtml(item.code) + '</td>' +
-        '<td>' + (item.source === 'camera' ? 'Câmera' : 'Manual') + '</td>' +
+        '<td>' + (item.source === 'camera' ? 'Câmera (OCR)' : 'Manual') + '</td>' +
         '<td>' + formatTime(item.time) + '</td>' +
         '<td><button class="removeBtn" type="button" data-index="' + index + '">remover</button></td>';
       resultBody.appendChild(row);
@@ -101,63 +107,149 @@
     setStatus('Solicitando acesso à câmera...', '');
     btnStart.disabled = true;
 
-    const onDecode = (result) => {
-      if (result) {
-        const code = result.getText();
-        if (addItem(code, 'camera')) {
-          setStatus('Patrimônio "' + code + '" capturado pela câmera.', 'success');
-        }
-      }
-    };
+    const constraintsOptions = [
+      { video: { facingMode: { ideal: 'environment' } } },
+      { video: true }
+    ];
 
-    try {
-      // Pede a câmera traseira diretamente: em navegadores móveis o prompt de
-      // permissão só aparece de forma confiável dentro de um getUserMedia
-      // disparado por um gesto do usuário (não ao listar dispositivos antes).
-      await codeReader.decodeFromConstraints(
-        { video: { facingMode: { ideal: 'environment' } } },
-        video,
-        onDecode
-      );
-      scanning = true;
-      btnStop.disabled = false;
-      setStatus('Câmera ligada. Aponte para o código de barras da etiqueta.', '');
-      return;
-    } catch (err) {
-      console.warn('Falha ao usar facingMode "environment", tentando câmera padrão...', err);
+    let lastError = null;
+    for (const constraints of constraintsOptions) {
+      try {
+        // Pede a câmera diretamente: em navegadores móveis (sobretudo iOS Safari)
+        // o prompt de permissão só aparece de forma confiável dentro de um
+        // getUserMedia disparado pelo gesto do usuário (não ao listar dispositivos antes).
+        mediaStream = await navigator.mediaDevices.getUserMedia(constraints);
+        video.srcObject = mediaStream;
+        await video.play();
+
+        btnStop.disabled = false;
+        btnCapture.disabled = false;
+        setStatus('Câmera ligada. Centralize o número do patrimônio no quadro e toque em "Capturar e ler número".', '');
+        return;
+      } catch (err) {
+        console.warn('Falha ao iniciar câmera com', constraints, err);
+        lastError = err;
+      }
     }
 
-    try {
-      await codeReader.decodeFromConstraints({ video: true }, video, onDecode);
-      scanning = true;
-      btnStop.disabled = false;
-      setStatus('Câmera ligada. Aponte para o código de barras da etiqueta.', '');
-    } catch (err) {
-      btnStart.disabled = false;
-      if (err && (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError')) {
-        setStatus('Permissão da câmera negada. Habilite o acesso à câmera para este site nas configurações do navegador e tente novamente.', 'error');
-      } else if (location.protocol !== 'https:' && location.hostname !== 'localhost') {
-        setStatus('O acesso à câmera só funciona em conexões seguras (HTTPS). Abra o site pelo link https.', 'error');
-      } else {
-        setStatus('Não foi possível acessar a câmera. Use a opção de digitar manualmente abaixo.', 'error');
-      }
+    btnStart.disabled = false;
+    reportCameraError(lastError);
+  }
+
+  function reportCameraError(err) {
+    if (err && (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError')) {
+      setStatus('Permissão da câmera negada. Habilite o acesso à câmera para este site nas configurações do navegador e tente novamente.', 'error');
+    } else if (location.protocol !== 'https:' && location.hostname !== 'localhost') {
+      setStatus('O acesso à câmera só funciona em conexões seguras (HTTPS). Abra o site pelo link https.', 'error');
+    } else {
+      setStatus('Não foi possível acessar a câmera. Use a opção de digitar manualmente abaixo.', 'error');
+    }
+    if (err) {
       console.error(err);
     }
   }
 
   function stopScanning() {
-    if (!scanning) {
-      return;
+    if (mediaStream) {
+      mediaStream.getTracks().forEach((track) => track.stop());
+      mediaStream = null;
     }
-    codeReader.reset();
-    scanning = false;
+    video.srcObject = null;
     btnStart.disabled = false;
     btnStop.disabled = true;
+    btnCapture.disabled = true;
+    hideReviewPanel();
     setStatus('Câmera desligada.', '');
   }
 
   btnStart.addEventListener('click', startScanning);
   btnStop.addEventListener('click', stopScanning);
+
+  async function getOcrWorker() {
+    if (!ocrWorker) {
+      const { createWorker } = Tesseract;
+      ocrWorker = await createWorker('eng');
+      await ocrWorker.setParameters({
+        tessedit_char_whitelist: '0123456789-./',
+        tessedit_pageseg_mode: '7'
+      });
+    }
+    return ocrWorker;
+  }
+
+  function cleanRecognizedText(text) {
+    return text
+      .replace(/[^0-9\-./]/g, '')
+      .replace(/\s+/g, '')
+      .trim();
+  }
+
+  function showReviewPanel(recognizedText) {
+    reviewInput.value = recognizedText;
+    reviewPanel.classList.remove('hidden');
+    reviewInput.focus();
+    reviewInput.select();
+  }
+
+  function hideReviewPanel() {
+    reviewPanel.classList.add('hidden');
+    reviewInput.value = '';
+  }
+
+  btnCapture.addEventListener('click', async () => {
+    if (!mediaStream) {
+      return;
+    }
+    btnCapture.disabled = true;
+    setStatus('Lendo número do patrimônio...', '');
+    hideReviewPanel();
+
+    try {
+      const videoWidth = video.videoWidth;
+      const videoHeight = video.videoHeight;
+
+      // Recorta a região central do quadro (onde o usuário deve posicionar o
+      // número), pois isso melhora bastante a precisão do OCR.
+      const cropWidth = videoWidth * 0.76;
+      const cropHeight = videoHeight * 0.24;
+      const cropX = (videoWidth - cropWidth) / 2;
+      const cropY = (videoHeight - cropHeight) / 2;
+
+      canvas.width = cropWidth;
+      canvas.height = cropHeight;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(video, cropX, cropY, cropWidth, cropHeight, 0, 0, cropWidth, cropHeight);
+
+      const worker = await getOcrWorker();
+      const { data } = await worker.recognize(canvas);
+      const recognized = cleanRecognizedText(data.text || '');
+
+      if (recognized) {
+        setStatus('Número reconhecido. Confira antes de adicionar.', 'success');
+        showReviewPanel(recognized);
+      } else {
+        setStatus('Não foi possível reconhecer o número. Tente novamente ou digite manualmente.', 'error');
+      }
+    } catch (err) {
+      setStatus('Erro ao processar a imagem. Tente novamente ou digite manualmente.', 'error');
+      console.error(err);
+    } finally {
+      btnCapture.disabled = false;
+    }
+  });
+
+  btnReviewAdd.addEventListener('click', () => {
+    const code = reviewInput.value;
+    if (addItem(code, 'camera')) {
+      setStatus('Patrimônio "' + code.trim() + '" adicionado.', 'success');
+      hideReviewPanel();
+    }
+  });
+
+  btnReviewDiscard.addEventListener('click', () => {
+    hideReviewPanel();
+    setStatus('Leitura descartada. Aponte a câmera novamente e capture.', '');
+  });
 
   btnPdf.addEventListener('click', () => {
     if (items.length === 0) {
@@ -198,13 +290,22 @@
       }
       doc.text(String(index + 1), marginLeft, y);
       doc.text(item.code, marginLeft + 14, y);
-      doc.text(item.source === 'camera' ? 'Câmera' : 'Manual', marginLeft + 90, y);
+      doc.text(item.source === 'camera' ? 'Câmera (OCR)' : 'Manual', marginLeft + 90, y);
       doc.text(formatTime(item.time), marginLeft + 130, y);
     });
 
     const fileName = 'patrimonios-' + new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-') + '.pdf';
     doc.save(fileName);
     setStatus('PDF salvo: ' + fileName, 'success');
+  });
+
+  window.addEventListener('beforeunload', () => {
+    if (ocrWorker) {
+      ocrWorker.terminate();
+    }
+    if (mediaStream) {
+      mediaStream.getTracks().forEach((track) => track.stop());
+    }
   });
 
   renderList();

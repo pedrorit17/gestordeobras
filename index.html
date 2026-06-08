@@ -3,8 +3,11 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
   <title>Leitor de Patrimônio</title>
-  <link rel="stylesheet" href="css/style.css">
+  <link rel="stylesheet" href="css/style.css?v=3">
 </head>
 <body>
   <header>
@@ -15,13 +18,25 @@
     <section class="scanner-section">
       <div class="video-wrapper">
         <video id="preview" muted playsinline></video>
-        <div class="scan-line"></div>
+        <div class="scan-frame"></div>
       </div>
+      <canvas id="captureCanvas" class="hidden"></canvas>
       <div class="scanner-controls">
         <button id="btnStart" type="button">Ligar câmera</button>
+        <button id="btnCapture" type="button" disabled>Capturar e ler número</button>
         <button id="btnStop" type="button" disabled>Desligar câmera</button>
       </div>
       <p id="scanStatus" class="status"></p>
+
+      <div id="reviewPanel" class="review-panel hidden">
+        <h3>Confira o número lido</h3>
+        <p class="hint">Confirme ou corrija o número antes de adicionar à lista.</p>
+        <input type="text" id="reviewInput" autocomplete="off">
+        <div class="review-actions">
+          <button id="btnReviewAdd" type="button" class="primary">Adicionar à lista</button>
+          <button id="btnReviewDiscard" type="button" class="secondary">Descartar</button>
+        </div>
+      </div>
     </section>
 
     <section class="manual-section">
@@ -56,8 +71,8 @@
     </section>
   </main>
 
-  <script src="https://unpkg.com/@zxing/library@0.21.3/umd/index.min.js"></script>
+  <script src="https://unpkg.com/tesseract.js@5.1.1/dist/tesseract.min.js"></script>
   <script src="https://unpkg.com/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
-  <script src="js/app.js"></script>
+  <script src="js/app.js?v=3"></script>
 </body>
 </html>
