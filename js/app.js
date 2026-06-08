@@ -100,26 +100,47 @@
   async function startScanning() {
     setStatus('Solicitando acesso à câmera...', '');
     btnStart.disabled = true;
-    try {
-      const devices = await ZXing.BrowserMultiFormatReader.listVideoInputDevices();
-      const backCamera = devices.find((device) => /back|traseira|rear|environment/i.test(device.label));
-      const deviceId = backCamera ? backCamera.deviceId : (devices[0] && devices[0].deviceId);
 
-      await codeReader.decodeFromVideoDevice(deviceId, video, (result, error) => {
-        if (result) {
-          const code = result.getText();
-          if (addItem(code, 'camera')) {
-            setStatus('Patrimônio "' + code + '" capturado pela câmera.', 'success');
-          }
+    const onDecode = (result) => {
+      if (result) {
+        const code = result.getText();
+        if (addItem(code, 'camera')) {
+          setStatus('Patrimônio "' + code + '" capturado pela câmera.', 'success');
         }
-      });
+      }
+    };
 
+    try {
+      // Pede a câmera traseira diretamente: em navegadores móveis o prompt de
+      // permissão só aparece de forma confiável dentro de um getUserMedia
+      // disparado por um gesto do usuário (não ao listar dispositivos antes).
+      await codeReader.decodeFromConstraints(
+        { video: { facingMode: { ideal: 'environment' } } },
+        video,
+        onDecode
+      );
+      scanning = true;
+      btnStop.disabled = false;
+      setStatus('Câmera ligada. Aponte para o código de barras da etiqueta.', '');
+      return;
+    } catch (err) {
+      console.warn('Falha ao usar facingMode "environment", tentando câmera padrão...', err);
+    }
+
+    try {
+      await codeReader.decodeFromConstraints({ video: true }, video, onDecode);
       scanning = true;
       btnStop.disabled = false;
       setStatus('Câmera ligada. Aponte para o código de barras da etiqueta.', '');
     } catch (err) {
       btnStart.disabled = false;
-      setStatus('Não foi possível acessar a câmera. Use a opção de digitar manualmente abaixo.', 'error');
+      if (err && (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError')) {
+        setStatus('Permissão da câmera negada. Habilite o acesso à câmera para este site nas configurações do navegador e tente novamente.', 'error');
+      } else if (location.protocol !== 'https:' && location.hostname !== 'localhost') {
+        setStatus('O acesso à câmera só funciona em conexões seguras (HTTPS). Abra o site pelo link https.', 'error');
+      } else {
+        setStatus('Não foi possível acessar a câmera. Use a opção de digitar manualmente abaixo.', 'error');
+      }
       console.error(err);
     }
   }
