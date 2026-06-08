@@ -170,18 +170,33 @@
       const { createWorker } = Tesseract;
       ocrWorker = await createWorker('eng');
       await ocrWorker.setParameters({
-        tessedit_char_whitelist: '0123456789-./',
+        tessedit_char_whitelist: '0123456789-',
         tessedit_pageseg_mode: '7'
       });
     }
     return ocrWorker;
   }
 
+  // O número do patrimônio é uma sequência de 8 dígitos seguida de um
+  // traço e um dígito verificador (ex: 00132136-4). O OCR às vezes não
+  // reconhece o traço, então tentamos reencaixar nesse formato quando
+  // a quantidade de dígitos lidos bate com o esperado.
   function cleanRecognizedText(text) {
-    return text
-      .replace(/[^0-9\-./]/g, '')
+    let cleaned = text
+      .replace(/[^0-9\-]/g, '')
       .replace(/\s+/g, '')
+      .replace(/-+/g, '-')
+      .replace(/^-+|-+$/g, '')
       .trim();
+
+    if (!cleaned.includes('-')) {
+      const digits = cleaned.replace(/[^0-9]/g, '');
+      if (digits.length === 9) {
+        cleaned = digits.slice(0, 8) + '-' + digits.slice(8);
+      }
+    }
+
+    return cleaned;
   }
 
   function showReviewPanel(recognizedText) {
