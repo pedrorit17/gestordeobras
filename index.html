@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Leitor de Patrimônio</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <header>
+    <h1>Leitor de Patrimônio</h1>
+  </header>
+
+  <main>
+    <section class="scanner-section">
+      <div class="video-wrapper">
+        <video id="preview" muted playsinline></video>
+        <div class="scan-line"></div>
+      </div>
+      <div class="scanner-controls">
+        <button id="btnStart" type="button">Ligar câmera</button>
+        <button id="btnStop" type="button" disabled>Desligar câmera</button>
+      </div>
+      <p id="scanStatus" class="status"></p>
+    </section>
+
+    <section class="manual-section">
+      <h2>Adicionar manualmente</h2>
+      <form id="manualForm">
+        <input type="text" id="manualInput" placeholder="Número do patrimônio (ex: 001321364-4)" autocomplete="off">
+        <button type="submit">Adicionar</button>
+      </form>
+    </section>
+
+    <section class="list-section">
+      <div class="list-header">
+        <h2>Patrimônios lidos (<span id="listCount">0</span>)</h2>
+        <div class="list-actions">
+          <button id="btnClear" type="button" class="secondary">Limpar lista</button>
+          <button id="btnPdf" type="button" class="primary">Salvar PDF</button>
+        </div>
+      </div>
+      <table id="resultTable">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Patrimônio</th>
+            <th>Origem</th>
+            <th>Horário</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="resultBody"></tbody>
+      </table>
+      <p id="emptyMessage" class="empty">Nenhum patrimônio lido ainda.</p>
+    </section>
+  </main>
+
+  <script src="https://unpkg.com/@zxing/library@0.21.3/umd/index.min.js"></script>
+  <script src="https://unpkg.com/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
